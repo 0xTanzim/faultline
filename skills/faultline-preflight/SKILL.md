@@ -13,7 +13,7 @@ compatibility: Requires an Agent Skills-compatible coding agent with repository
   read/search tools. Optional native subagent delegation is host-specific.
 metadata:
   project: faultline
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # Faultline Preflight — Brownfield-First Adversarial Engineering

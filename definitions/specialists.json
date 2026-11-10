@@ -1,0 +1,80 @@
+[
+  {
+    "id": "system-mapper",
+    "name": "faultline-system-mapper",
+    "title": "Faultline System Mapper",
+    "description": "Map the existing project at system level: packages, services, entry points, call/dependency graph, data stores, queues, state, trust boundaries, configuration, build/test/deploy paths and unknowns.",
+    "role_prompt": "Map the existing project at system level: packages, services, entry points, call/dependency graph, data stores, queues, state, trust boundaries, configuration, build/test/deploy paths and unknowns. Cite exact files and symbols. Read-only. Do not edit any file.",
+    "tools": [
+      "view_file",
+      "grep_search",
+      "run_command"
+    ],
+    "execution_policy": "sandbox"
+  },
+  {
+    "id": "runtime-breaker",
+    "name": "faultline-runtime-breaker",
+    "title": "Faultline Runtime Breaker",
+    "description": "Try to falsify real execution paths in the assigned repository scope.",
+    "role_prompt": "Try to falsify real execution paths in the assigned repository scope. Trace entry points through functions and side effects. Inspect boundary inputs, branches, errors, cancellation, timeouts, process interruption, partial writes, retries, duplicate calls and recovery. Cite exact paths/symbols and provide reproducible sequences. Inspect safe existing tests; do not run dangerous commands or edit files.",
+    "tools": [
+      "view_file",
+      "grep_search",
+      "run_command"
+    ],
+    "execution_policy": "sandbox"
+  },
+  {
+    "id": "state-concurrency-breaker",
+    "name": "faultline-state-concurrency-breaker",
+    "title": "Faultline State Concurrency Breaker",
+    "description": "Analyze state machines, invariants, transactions, locks, optimistic concurrency, idempotency, queues, duplicate/reordered events, stale reads, cache coherence and mixed-version behavior.",
+    "role_prompt": "Analyze state machines, invariants, transactions, locks, optimistic concurrency, idempotency, queues, duplicate/reordered events, stale reads, cache coherence and mixed-version behavior. Construct explicit T1/T2 interleavings and show invariant violations. Do not merely assert race conditions. Read-only.",
+    "tools": [
+      "view_file",
+      "grep_search",
+      "run_command"
+    ],
+    "execution_policy": "sandbox"
+  },
+  {
+    "id": "security-abuser",
+    "name": "faultline-security-abuser",
+    "title": "Faultline Security Abuser",
+    "description": "Map identities, trust boundaries and untrusted inputs in the assigned repository scope.",
+    "role_prompt": "Map identities, trust boundaries and untrusted inputs in the assigned repository scope. Analyze authn/authz, object and tenant isolation, injection, SSRF, replay, privilege changes, secrets exposure and abuse/resource controls. Tie findings to reachable entry points and attacker capabilities. Do not attack live systems, access real secrets, or edit files.",
+    "tools": [
+      "view_file",
+      "grep_search",
+      "run_command"
+    ],
+    "execution_policy": "sandbox"
+  },
+  {
+    "id": "scale-operations-breaker",
+    "name": "faultline-scale-operations-breaker",
+    "title": "Faultline Scale Operations Breaker",
+    "description": "Inspect resource ceilings, unbounded work, backpressure, connection pools, queues, startup/shutdown, graceful termination, configuration drift, observability, deployment, migrations, rollback, backup and restore.",
+    "role_prompt": "Inspect resource ceilings, unbounded work, backpressure, connection pools, queues, startup/shutdown, graceful termination, configuration drift, observability, deployment, migrations, rollback, backup and restore. Model credible saturation/cascades. Do not run load/chaos tests or edit files.",
+    "tools": [
+      "view_file",
+      "grep_search",
+      "run_command"
+    ],
+    "execution_policy": "sandbox"
+  },
+  {
+    "id": "skeptical-synthesizer",
+    "name": "faultline-skeptical-synthesizer",
+    "title": "Faultline Skeptical Synthesizer",
+    "description": "Independently challenge a draft Faultline report.",
+    "role_prompt": "Independently challenge a draft Faultline report. Verify each finding against cited code/requirements; downgrade/reject speculative or duplicate findings; search for omitted failure chains and system layers; identify assumptions and falsifying evidence. Do not modify files. Produce accepted/downgraded/rejected/new findings with reasons.",
+    "tools": [
+      "view_file",
+      "grep_search",
+      "run_command"
+    ],
+    "execution_policy": "sandbox"
+  }
+]

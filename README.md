@@ -1,240 +1,313 @@
 # Faultline
 
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](VERSION)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](install.py)
+[![Standard](https://img.shields.io/badge/standard-Agent%20Skills-purple.svg)](skills/)
+[![Multi--Host](https://img.shields.io/badge/hosts-Antigravity%20%7C%20OpenCode%20%7C%20Claude%20%7C%20Kiro%20%7C%20Cursor%20%7C%20Copilot-orange.svg)](docs/compatibility.md)
+
 **Portable adversarial engineering intelligence for AI coding agents.**
 
-Faultline makes coding agents map a real repository, trace actual code paths, and try to falsify behavior *before* a specification or implementation is finalized — not after. It is designed for brownfield (existing) projects first, not only greenfield feature briefs.
+Faultline forces coding agents to map real repositories, trace actual execution paths, and try to falsify behavior **before** a specification or implementation is finalized — not after. Designed for brownfield (existing) projects first, stopping bugs, broken invariants, and regressions before they are written into code.
 
 ---
 
 ## Why Faultline?
 
-Most agent workflows jump straight from a feature description to code generation. In real projects, the dangerous unknowns live in the existing system: hidden invariants, implicit contracts, legacy edge cases, and failure combinations that only appear when you trace what the code actually does.
+Most agent workflows jump straight from a user prompt to code generation. In production systems, the most dangerous unknowns live in the existing codebase: implicit invariants, brittle contracts, legacy side effects, unhandled error paths, and failure combinations that only become apparent when you trace what the code actually does.
 
-Faultline enforces a **falsification pass** before any implementation: map the real system, trace the affected paths, break the contracts, rank the risks — then write a spec or proceed to code.
+Faultline enforces a **pre-implementation falsification gate**:
+1. **Map** the real system (components, entry points, data flows, trust boundaries).
+2. **Trace** affected code paths and state transitions.
+3. **Falsify** assumptions using adversarial specialists (runtime, concurrency, security, scale).
+4. **Rank** risks with qualitative evidence (Severity, Likelihood, blast radius).
+5. **Output** concrete Given/When/Then test scenarios before any production code is touched.
+
+---
+
+## Multi-Host Support Matrix
+
+Faultline 0.4.0 is host-agnostic, providing native adapters compiled from a single source of truth (`definitions/specialists.json`):
+
+| Host Environment | Skills Location | Subagent Adapters | Instruction & Gate Integration | Auto-Detection Trigger |
+| :--- | :--- | :--- | :--- | :--- |
+| **Google Antigravity** | `.agents/skills/` (symlink) | `.agents/agents/` | `AGENTS.md` (marked block) | Default |
+| **OpenCode** | `.agents/skills/` (symlink) | `.opencode/agents/` | `AGENTS.md` | Default |
+| **Claude Code** | `.claude/skills/` | `.claude/agents/` | `CLAUDE.md` (marked block) | `.claude/` or `CLAUDE.md` |
+| **Amazon Kiro** | `.kiro/skills/` | `.kiro/agents/` | `.kiro/hooks/faultline-gate.json` | `.kiro/` |
+| **Cursor** | `skills/` or `.agents/skills/` | N/A (Rules-based) | `.cursor/rules/faultline.mdc` | `.cursor/` or `.cursorrules` |
+| **GitHub Copilot** | `skills/` or `.agents/skills/` | N/A (Instruction-based) | `.github/copilot-instructions.md` | `.github/` |
+| **Zed / Codex / Other** | `skills/` or `.agents/skills/` | Sequential passes | `AGENTS.md` | Default |
 
 ---
 
 ## What's Included
 
-| Skill | Purpose |
+### 1. Portable Agent Skills (Canonical Root `skills/`)
+
+Conforms to the open **Agent Skills standard** (`anthropics/skills` layout) with a backward-compatible `.agents/skills` symlink:
+
+| Skill | Description | Primary Command |
+|---|---|---|
+| `faultline-preflight` | Full brownfield preflight: system mapping, failure analysis, specialist orchestration, and durable report generation | `/faultline-preflight` |
+| `faultline-break-sweep` | Focused adversarial sweep of existing code; uncover regressions and test gaps without modifying code | `/faultline-break-sweep` |
+| `faultline-spec-audit` | Audit an OpenSpec proposal against preflight findings; verify risks become concrete Given/When/Then scenarios | `/faultline-spec-audit` |
+
+### 2. Six Specialist Subagent Roles
+
+When the problem scope justifies it, the orchestrator delegates to independent read-only specialists:
+
+| Specialist Role | Focus Area |
 |---|---|
-| `faultline-preflight` | Full system-level preflight: brownfield reconnaissance, failure analysis, specialist delegation, and durable report output |
-| `faultline-break-sweep` | Focused adversarial sweep of an existing implementation; find defects and test gaps without touching production code |
-| `faultline-spec-audit` | Audit an OpenSpec proposal against the preflight report; verify risks became concrete, testable Given/When/Then scenarios |
+| `system-mapper` | Packages, entry points, call/dependency graph, data stores, trust boundaries, configuration |
+| `runtime-breaker` | Execution paths, branches, errors, cancellation, timeouts, partial writes, crash points, recovery |
+| `state-concurrency-breaker` | State machines, invariants, transactions, locks, races, ordering, idempotency, stale reads |
+| `security-abuser` | Authentication, authorization, trust boundaries, injection, data exposure, tenant isolation |
+| `scale-operations-breaker` | Resource ceilings, queues, backpressure, startup/shutdown, deployment, telemetry, logging |
+| `skeptical-synthesizer` | Independent verification: challenges draft findings, flags false positives, checks evidence |
 
-**Supporting artifacts:**
-- System-level break checklist
-- Multi-method failure taxonomy (FMEA, STRIDE, pre-mortem, state/invariant analysis, fault-tree reasoning)
-- Risk model with qualitative severity/likelihood matrix
-- Specialist delegation protocol with six adversarial roles
-- Structured report schema and durable report template
-- Structural validator script
+> **Single Source of Truth (SSOT):** Specialist prompts are authored once in `definitions/specialists.json` and compiled across Antigravity, OpenCode, Claude Code, and Kiro via `scripts/build_adapters.py`.
 
-**Native subagent adapters for:**
-- **Google Antigravity** — six workspace subagents under `.agents/agents/`
-- **OpenCode** — six specialist subagents and a restricted primary orchestrator under `.opencode/agents/`
+### 3. Supporting Methodologies & References
 
----
-
-## Six Specialist Roles
-
-When the problem scope justifies it, the orchestrating agent delegates to independent read-only specialists running in parallel:
-
-| Role | Responsibility |
-|---|---|
-| `system-mapper` | Map components, entry points, data flows, trust boundaries, external dependencies |
-| `runtime-breaker` | Trace execution paths, partial writes, retries, timeouts, crash points, recovery failures |
-| `state-concurrency-breaker` | Inspect state invariants, duplicate delivery, races, ordering, transaction boundaries |
-| `security-abuser` | Inspect auth, tenant isolation, trust boundaries, input abuse, data exposure |
-| `scale-operations-breaker` | Inspect resource limits, queues, startup/shutdown, deploy/rollback, observability |
-| `skeptical-synthesizer` | Challenge draft findings — false positives, omitted failure chains, missing evidence |
-
-Specialists are always read-only. The orchestrator deduplicates, resolves disagreements with evidence, and owns final risk ranking.
+Located inside `skills/faultline-preflight/references/`:
+- **Failure Taxonomy:** Multi-method coverage including FMEA, STRIDE, pre-mortem, state/invariant analysis, and fault-tree analysis.
+- **Risk Model:** Qualitative severity/likelihood matrix with explicit blast radius criteria.
+- **System-Level Checklist:** Core break scenarios across state, distributed boundaries, resources, and dependencies.
+- **Delegation Protocol:** Rules for parallel subagent invocation, result schema, and synthesis.
+- **Report Schema & Template:** Machine-validatable Markdown report template with Given/When/Then scenario structures.
 
 ---
 
-## Install
+## Installation
 
-Preview what will be written:
+Faultline features a universal, zero-dependency installer (`install.py`) written in pure Python 3 standard library, with shell wrappers for POSIX (`install.sh`) and Windows PowerShell (`install.ps1`).
 
-```bash
-./install.sh --dry-run /path/to/your/project
-```
+### Quick Start (Project Scope)
 
-Install into a project:
+Install into your current project with smart environment auto-detection:
 
 ```bash
-./install.sh /path/to/your/project
+# Pure Python (Linux, macOS, Windows)
+python3 install.py /path/to/project
+
+# POSIX Shell
+./install.sh /path/to/project
+
+# Windows PowerShell
+.\install.ps1 C:\path\to\project
 ```
 
-Force-refresh existing Faultline-owned files (inspect local modifications first):
+The installer detects your project markers (e.g. `.github/`, `.cursor/`, `.claude/`, `.kiro/`) and configures only the relevant host adapters and rules automatically.
+
+### Global Installation (User Scope)
+
+To use Faultline across all repositories on your system without installing into every individual repository:
 
 ```bash
-./install.sh --force /path/to/your/project
+python3 install.py --global
 ```
 
-Skip platform-specific agent adapters if you don't need them:
+This installs portable skills to `~/.agents/skills/`, `~/.claude/skills/`, and `~/.kiro/skills/`.
+
+### Advanced Options & Flags
 
 ```bash
-./install.sh --no-antigravity-agents /path/to/your/project
-./install.sh --no-opencode-agents /path/to/your/project
+# Preview what would be created/modified without writing files:
+python3 install.py --dry-run /path/to/project
+
+# Install adapters for all supported environments regardless of auto-detection:
+python3 install.py --all /path/to/project
+
+# Force overwrite existing Faultline files and refresh marked instruction blocks:
+python3 install.py --force /path/to/project
+
+# Granular host exclusions:
+python3 install.py --no-antigravity /path/to/project
+python3 install.py --no-opencode /path/to/project
+python3 install.py --no-claude /path/to/project
+python3 install.py --no-kiro /path/to/project
+python3 install.py --no-cursor /path/to/project
+python3 install.py --no-copilot /path/to/project
 ```
 
-**The installer writes:**
-- Shared portable skills → `.agents/skills/`
-- Antigravity custom subagents → `.agents/agents/`
-- OpenCode agents → `.opencode/agents/`
-- A delimited Faultline block → `AGENTS.md`
+### Delimited Marker Safety
 
-It preserves all unrelated `AGENTS.md` content and refuses to overwrite existing Faultline files unless `--force` is used.
+When adding instructions to `AGENTS.md`, `CLAUDE.md`, or `.github/copilot-instructions.md`, Faultline encloses its additions inside explicit safety markers:
+
+```markdown
+<!-- faultline:start -->
+## Faultline Preflight Gate
+...
+<!-- faultline:end -->
+```
+
+Running `python3 install.py --force` replaces **only** the content inside the markers, leaving all of your existing configuration, rules, and notes completely intact.
 
 ---
 
-## Usage
+## Workflows & Usage
 
-### Antigravity — preflight before a feature
+### 1. Preflight Before a Feature or Spec
+
+Before writing a spec or beginning an implementation, run `faultline-preflight`:
+
+#### In Google Antigravity:
+```text
+/faultline-preflight Analyze the proposed caching layer against our existing database access paths.
+Map affected components, trace failure paths, and identify broken invariants. Do not edit code.
+```
+
+#### In OpenCode:
+Select `faultline-orchestrator` as the primary agent (press `Tab` to open agent selector), then prompt:
+```text
+Run Faultline preflight against the payment processing service.
+Map real entry points, trace partial write behaviors, and delegate to specialist agents.
+```
+
+#### In Claude Code:
+```text
+/faultline-preflight on the order cancellation flow.
+Check database transactions, out-of-order webhooks, and retry policies.
+```
+
+#### In Cursor / GitHub Copilot:
+Ask the assistant to follow the installed Faultline rules before proposing code changes:
+```text
+Apply Faultline preflight rules to this change. Trace affected call paths and
+identify high-risk failure modes with Given/When/Then test scenarios before proposing diffs.
+```
+
+---
+
+### 2. Adversarial Codebase Audit (Brownfield Sweep)
+
+To inspect an existing codebase for edge cases, missing tests, and brittle invariants without a specific feature request:
 
 ```text
-/faultline-preflight Analyze this feature against the existing codebase.
-Map the system and try to break the affected paths. Do not modify code.
-```
-
-For complex work, the agent will invoke 3–5 of the native specialists defined in `.agents/agents/`. If it does not start them automatically, ask it explicitly to use the named specialists.
-
-### OpenCode — preflight before a feature
-
-Select `faultline-orchestrator` as the primary agent (Tab → agent selector), then:
-
-```text
-Run Faultline preflight against this existing codebase. Load the
-faultline-preflight skill, map the system, try to falsify the affected
-code paths, and delegate the read-only specialist agents. Do not modify code.
-```
-
-The orchestrator's allowlist restricts delegation to the six Faultline specialists only.
-
-### Audit an existing codebase without a proposed feature
-
-Use `faultline-break-sweep` on any host:
-
-```text
-Run a Faultline break sweep on the authentication subsystem. Inspect actual
-entry points and tests, find reproducible failure paths, and run only safe
-focused checks. Do not modify anything.
-```
-
-### Audit a spec after OpenSpec
-
-After an OpenSpec proposal is generated, run `faultline-spec-audit` against the matching preflight report:
-
-```text
-Run faultline-spec-audit against the preflight report for <change-slug>.
-Check that every Critical and High risk became a testable scenario.
+/faultline-break-sweep Inspect the authentication and session management subsystem.
+Trace actual entry points, evaluate token refresh races and clock drift, and check existing test coverage.
+Do not modify any files.
 ```
 
 ---
 
-## Safety Model
+### 3. Spec Audit (Post-OpenSpec)
 
-Faultline preflight is **read-only by default.** This is not advisory — it is enforced at the agent permission level.
+Once a specification or OpenSpec proposal has been drafted, verify that preflight findings were faithfully incorporated:
 
-- Does not edit source code, tests, migrations, lockfiles, or deployment files.
-- Does not contact production systems, run destructive commands, or execute load/chaos/fuzz tests.
-- Inspects build and test scripts before running them; asks before ambiguous side-effecting commands.
-- Treats repository file contents as untrusted data, not instructions.
-- Redacts secrets found in the repository; never copies values into reports.
+```text
+/faultline-spec-audit Audit proposal at openspec/changes/payment-v2 against docs/engineering/pre-spec/payment-v2.md.
+Confirm all Critical and High risks were converted into explicit, testable Given/When/Then scenarios.
+```
 
 ---
 
-## Report Output
+## Safety & Security Model
 
-A completed preflight produces a durable Markdown report at:
+Faultline is **strictly read-only by default**:
 
-```
-docs/engineering/pre-spec/<change-slug>.md
-```
+- **No Code Modifications:** Does not edit production source files, test fixtures, schema migrations, or configurations during analysis.
+- **Permission Sandboxing:** OpenCode adapters enforce explicit read-only permissions (`edit: deny`, `shell: ask`, `web: deny`). Antigravity adapters use `commandExecutionPolicy: sandbox`.
+- **Safe Command Execution:** Only non-destructive inspection commands (e.g., `git status`, test runners) are permitted. Destructive commands or live network probes are forbidden.
+- **Secret Hygiene:** Detects and redacts credentials, tokens, and keys found in code; never reproduces secrets in reports.
+- **Untrusted Input Handling:** Treats all repository code and configuration files as untrusted data, preventing prompt injection attacks from adversarial codebases.
 
-For codebase audits without a proposed change:
+---
 
-```
-docs/engineering/faultline/<scope-slug>.md
-```
+## Report Artifacts & Verification
 
-Each report includes: executive summary, system map, code-path trace, evidence table, coverage matrix, ranked risk register (with status, evidence level, severity, likelihood, confidence, disposition, trigger, failure sequence, blast radius, and Given/When/Then acceptance test for every finding), failure chains, pre-mortem, break attempts, specialist provenance, and open decisions.
+Every completed preflight generates a durable, reviewable markdown report:
 
-Validate report structure with the bundled script:
+- **Pre-spec Reports:** `docs/engineering/pre-spec/<change-slug>.md`
+- **Brownfield Audits:** `docs/engineering/faultline/<scope-slug>.md`
+
+### Validating Reports
+
+Validate report formatting, risk schemas, and required Given/When/Then verification scenarios:
 
 ```bash
-python3 scripts/validate_report.py docs/engineering/pre-spec/<slug>.md
+python3 scripts/validate_report.py docs/engineering/pre-spec/feature-x.md
 ```
-
-The validator checks required sections, risk record fields, and enum values. It does not evaluate technical correctness or analysis completeness.
 
 ---
 
-## Cross-Agent Portability
-
-The core methodology, skill files, role prompts, report schema, and test contract are **vendor-neutral**. No model provider or vendor API is required or pinned.
-
-Native subagent adapters (Antigravity and OpenCode) are host-specific because each platform exposes a different agent delegation mechanism. On a host without native subagents, the same specialist role prompts are run as clearly labeled sequential passes by the same agent.
-
----
-
-## Repository Layout
+## Repository Structure
 
 ```
+skills/                         # Canonical root skills (Agent Skills standard)
+  faultline-preflight/          # Main preflight skill
+    SKILL.md
+    references/                 # Methods, taxonomy, schema, delegation protocol
+    templates/                  # Durable preflight report template
+  faultline-break-sweep/        # Adversarial sweep of existing code
+    SKILL.md
+  faultline-spec-audit/         # Post-OpenSpec audit
+    SKILL.md
+    references/                 # Audit checklist and verification rules
+definitions/
+  specialists.json              # Single Source of Truth for specialist roles
 .agents/
-  skills/
-    faultline-preflight/        # Main preflight skill
-      SKILL.md
-      references/               # Analysis methods, taxonomy, schema, protocol, checklist
-      templates/                # Preflight report template
-    faultline-break-sweep/      # Adversarial sweep of existing code
-      SKILL.md
-    faultline-spec-audit/       # Post-OpenSpec audit
-      SKILL.md
-      references/
-  agents/                       # Antigravity native subagent adapters
+  skills -> ../skills           # Relative symlink for backward compatibility
+  agents/                       # Google Antigravity subagent adapters
 .opencode/
-  agents/                       # OpenCode V2 agent adapters
-docs/
-  methodology.md                # Why these analysis methods and how they combine
-  compatibility.md              # Host-specific notes for Antigravity and OpenCode
-  roadmap.md
-examples/
-  sample-preflight-report.md    # Annotated example report
-  sample-risk-record.md
-scripts/
-  validate_report.py            # Report structure validator
-  validate_skills.py            # Skill frontmatter structural validator
-tests/                          # Python unittest suite
+  agents/                       # OpenCode v2 agent adapters (with granular permissions)
+.claude/
+  agents/                       # Claude Code subagent adapters
+.kiro/
+  agents/                       # Amazon Kiro subagent adapters
+  hooks/                        # Kiro event hook definitions
+.cursor/
+  rules/                        # Cursor rule definitions (.mdc)
 integrations/
-  AGENTS.md.snippet             # Content injected into target AGENTS.md
-install.sh                      # Installer
+  AGENTS.md.snippet             # Injected into project AGENTS.md
+  CLAUDE.md.snippet             # Injected into project CLAUDE.md
+  copilot-instructions.md.snippet # Injected into project copilot-instructions.md
+docs/
+  methodology.md                # Failure analysis methodology & philosophy
+  compatibility.md              # Detailed multi-host compatibility guide
+  roadmap.md                    # Roadmap & future milestones
+examples/
+  sample-preflight-report.md    # Fully annotated sample preflight report
+  sample-risk-record.md         # Example risk record structure
+scripts/
+  build_adapters.py             # Compiler from specialists.json to all host adapters
+  validate_report.py            # Structural validator for preflight reports
+  validate_skills.py            # Structural validator for skills, definitions & adapters
+tests/                          # Comprehensive unittest test suite
+install.py                      # Pure Python 3 cross-platform installer
+install.sh                      # POSIX shell wrapper
+install.ps1                     # PowerShell wrapper
 ```
 
 ---
 
-## Run Tests
+## Development & Testing
+
+Faultline maintains strict test coverage and zero runtime dependencies outside Python 3 standard library:
 
 ```bash
+# Run all unit tests
 python3 -m unittest discover -s tests -v
-```
 
-Or using `npm`:
-
-```bash
+# Or using npm
 npm test
-```
 
-Validate skill structure:
+# Check adapter synchronization against Single Source of Truth
+npm run check:adapters
+# or: python3 scripts/build_adapters.py --check
 
-```bash
-python3 scripts/validate_skills.py
+# Compile adapters after modifying definitions/specialists.json
+npm run build:adapters
+# or: python3 scripts/build_adapters.py
+
+# Validate skills, schema, and host adapters
+npm run validate:skills
+# or: python3 scripts/validate_skills.py
 ```
 
 ---
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) © 2026 Tanzim & Contributors

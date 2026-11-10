@@ -1,0 +1,14 @@
+{
+  "name": "faultline-gate",
+  "version": "0.4.0",
+  "description": "Faultline preflight gate hook for pre-implementation adversarial audits",
+  "events": [
+    "pre-implementation",
+    "pre-spec"
+  ],
+  "action": {
+    "type": "skill",
+    "skill": "faultline-preflight",
+    "enforceReadOnly": true
+  }
+}

@@ -1,0 +1,15 @@
+---
+description: Faultline adversarial engineering gate for architecture and pre-implementation audits
+globs: *
+alwaysApply: false
+---
+
+# Faultline Adversarial Engineering Gate
+
+For substantial features, architecture changes, refactors, or security/concurrency-sensitive modifications:
+
+1. Before writing code or proposals, run a Faultline preflight audit following `.agents/skills/faultline-preflight/SKILL.md` (or `skills/faultline-preflight/SKILL.md`).
+2. Brownfield reconnaissance is mandatory: map packages, services, entry points, call graph, data stores, trust boundaries, and configuration.
+3. Keep preflight strictly read-only: never modify production code, migrations, or configs during preflight analysis.
+4. Stress-test execution paths: trace null/empty inputs, concurrency interleavings, retries, timeout/interruption scenarios.
+5. Record findings with reproducible sequences and testable Given/When/Then scenarios before implementing changes.

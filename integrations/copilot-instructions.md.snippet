@@ -1,0 +1,12 @@
+<!-- faultline:start -->
+## Faultline adversarial engineering gate
+
+When reasoning about system architecture, designing new features, proposing data models, or executing complex refactors:
+
+1. Follow the Faultline preflight methodology defined in `skills/faultline-preflight/SKILL.md` (or `.agents/skills/faultline-preflight/SKILL.md`).
+2. Conduct brownfield reconnaissance before proposing changes: map entry points, dependencies, persistent state, queues, trust boundaries, and operational constraints.
+3. Trace concrete execution paths and failure modes: evaluate boundary inputs, partial writes, retries, concurrency races, timeouts, and process interruptions.
+4. Keep adversarial preflight strictly read-only: do not alter code, tests, or configuration while evaluating failure conditions.
+5. Translate identified failure modes into explicit testable Given/When/Then scenarios.
+6. Verify risk traceability and audit assumptions using `skills/faultline-spec-audit/SKILL.md`.
+<!-- faultline:end -->

@@ -1,10 +1,13 @@
 {
   "name": "faultline-preflight-kit",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Portable adversarial engineering skills for AI coding agents",
   "scripts": {
     "test": "python3 -m unittest discover -s tests -v",
-    "validate:skills": "python3 scripts/validate_skills.py"
+    "validate:skills": "python3 scripts/validate_skills.py",
+    "build:adapters": "python3 scripts/build_adapters.py",
+    "check:adapters": "python3 scripts/build_adapters.py --check",
+    "install": "python3 install.py"
   }
 }

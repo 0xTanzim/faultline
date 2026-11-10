@@ -1,35 +1,77 @@
-# Compatibility Notes (v0.3.0)
+# Compatibility Reference (v0.4.0)
 
-## Shared Agent Skills
+## Shared Agent Skills Specification
 
-The portable core uses `.agents/skills/<name>/SKILL.md`. Agent Skills standardizes the package structure (`SKILL.md`, optional scripts/references/assets), not host discovery, command syntax, permissions or subagent APIs.
+- Canonical skills source: `skills/<name>/SKILL.md` at repository root, following the Agent Skills open standard.
+- Backward compatibility: `.agents/skills` is maintained as a relative symlink pointing to `../skills`.
+- Each skill package contains:
+  - `SKILL.md` (mandatory entry point with YAML frontmatter)
+  - `references/` (methodology, protocols, checklists, schemas)
+  - `templates/` (structured report templates)
 
-## Google Antigravity
+## Multi-Host Support Matrix
 
-- Workspace skills: `.agents/skills/`.
-- Workspace custom subagents: `.agents/agents/<name>.md` or `<name>/agent.md`.
-- Subagents: frontmatter `subagent: true`; parent invokes native `invoke_subagent`.
-- Faultline adapters use only documented generic tool IDs (`view_file`, `grep_search`, `run_command`) and sandbox command execution. Verify tool availability in your Antigravity build before relying on execution; the shared role prompts remain usable if a tool is unavailable.
+| Host Environment | Skills Location | Agent Adapters | Instruction / Gate Integration | Auto-Detection Trigger |
+| :--- | :--- | :--- | :--- | :--- |
+| **Google Antigravity** | `.agents/skills/` | `.agents/agents/` | `AGENTS.md` (marked block) | Default |
+| **OpenCode** | `.agents/skills/` | `.opencode/agents/` | `AGENTS.md` | Default |
+| **Claude Code** | `.claude/skills/` | `.claude/agents/` | `CLAUDE.md` (marked block) | `.claude/` or `CLAUDE.md` |
+| **Amazon Kiro** | `.kiro/skills/` | `.kiro/agents/` | `.kiro/hooks/faultline-gate.json` | `.kiro/` |
+| **Cursor** | `.agents/skills/` | N/A | `.cursor/rules/faultline.mdc` | `.cursor/` or `.cursorrules` |
+| **GitHub Copilot** | `skills/` or `.agents/skills/` | N/A | `.github/copilot-instructions.md` | `.github/` |
+| **Zed / Codex / Other** | `skills/` or `.agents/skills/` | Sequential passes | `AGENTS.md` | Default |
 
-## OpenCode
+## Host Details
 
-- Project skills: `.agents/skills/` is a documented agent-compatible skill location.
+### Google Antigravity
+- Workspace skills: `.agents/skills/` (resolves to `skills/`).
+- Workspace subagents: `.agents/agents/<name>.md`.
+- Frontmatter uses `subagent: true`, `commandExecutionPolicy: sandbox`, and standard tool IDs (`view_file`, `grep_search`, `run_command`).
+- Native subagent invocation via `invoke_subagent`.
+
+### OpenCode
+- Project skills: `.agents/skills/` (resolves to `skills/`).
 - Project agent definitions: `.opencode/agents/<name>.md`.
-- Current OpenCode V2 docs use `mode` and a `permissions` list. Faultline specialists are `mode: subagent` with editing denied. `faultline-orchestrator` is a primary agent with delegation allowed only to named Faultline roles.
-- OpenCode agent configuration is host-specific and can evolve. Validate against the installed OpenCode version; do not copy old V1 `permission`/`tools` fields into V2 configuration.
+- Specialists use `mode: subagent` with explicit `permissions` lists (read/glob/grep/list allowed, edit denied, shell ask, web denied).
+- `faultline-orchestrator` is a `mode: primary` agent with a delegation allowlist restricted to the 6 Faultline specialists.
 
-## OpenSpec
+### Claude Code
+- Project skills: `.claude/skills/`.
+- Project subagents: `.claude/agents/<name>.md`.
+- Global skills: `~/.claude/skills/`.
+- Instruction block: `CLAUDE.md` delimited by `<!-- faultline:start -->` and `<!-- faultline:end -->`.
 
-OpenSpec's current support matrix lists Antigravity and OpenCode. OpenSpec workflows are separate from Faultline; the report is an input to explore/propose and an audit target after proposal creation.
+### Amazon Kiro
+- Project skills: `.kiro/skills/`.
+- Project agents: `.kiro/agents/<name>.md`.
+- Event hook: `.kiro/hooks/faultline-gate.json` configures pre-implementation gate enforcement.
 
-## Existing repositories
+### Cursor
+- Rule file: `.cursor/rules/faultline.mdc` configures agent behavior to invoke Faultline preflight prior to code generation.
 
-Installer writes only Faultline-owned paths and a delimited section in `AGENTS.md`. It does not edit application files. It refuses existing Faultline-owned skill/agent paths unless `--force` is supplied. Back up or review local modifications before forced updates.
+### GitHub Copilot
+- Instructions file: `.github/copilot-instructions.md` provides architectural and adversarial preflight guidance delimited by marker comments.
 
-## Portability limits
+## Single Source of Truth & Adapter Compiler
 
-- Shared skills and role prompts are vendor-neutral.
-- Native agent definitions and delegation are host adapters.
-- Skill auto-selection is not guaranteed; invoke explicitly.
-- `AGENTS.md` is instruction guidance, not a hard lock.
-- Without subagent support, sequential passes are not independent and must be labeled accordingly.
+- Specialist definitions are maintained in `definitions/specialists.json`.
+- `scripts/build_adapters.py` compiles all specialist markdown files across `.agents/agents/`, `.opencode/agents/`, `.claude/agents/`, and `.kiro/agents/`.
+- Run `python3 scripts/build_adapters.py --check` in CI to ensure zero drift.
+
+## Universal Installer (`install.py`)
+
+- **Zero External Dependencies**: Pure Python 3 standard library.
+- **Dual Scopes**:
+  - Project scope: `python3 install.py /path/to/project`
+  - Global user scope: `python3 install.py --global` (installs to `~/.agents/skills/`, `~/.claude/skills/`, `~/.kiro/skills/`, etc.)
+- **Smart Auto-Detection**: Inspects directory markers (`.github/`, `.cursor/`, `.claude/`, `.kiro/`) and installs corresponding integrations automatically. Use `--all` to force installation of all environments.
+- **Delimited Block Safety**: Refreshes only content between `<!-- faultline:start -->` and `<!-- faultline:end -->` in instruction files without touching user configuration.
+- **Cross-Platform Wrappers**:
+  - POSIX: `./install.sh [options] [target]`
+  - PowerShell: `.\install.ps1 [options] [target]`
+
+## Portability Limits
+
+- Core skills and prompts are vendor-neutral.
+- Native agent definitions and delegation configurations are host-specific adapters.
+- When subagents are not supported by a host, run the roles as sequential analysis passes and clearly label them as not independently verified.

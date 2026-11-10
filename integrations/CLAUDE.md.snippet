@@ -1,0 +1,17 @@
+<!-- faultline:start -->
+## Faultline adversarial engineering gate
+
+For substantial new features, architecture changes, APIs/data models, authentication/authorization, integrations, migrations, bug fixes with broad impact, or major refactors:
+
+1. Before designing specifications or implementing substantial changes, invoke `faultline-preflight` or `faultline-break-sweep`.
+2. For an existing repository, brownfield reconnaissance is mandatory: inspect the actual repository, entry points, modules, dependencies, data/state, runtime, configuration, tests, CI, deployment, observability, and recovery boundaries.
+3. Trace concrete code paths and side effects. Identify current behavior/contracts that must remain true and all affected callers/consumers.
+4. Try to falsify the actual implementation: inspect test scripts, run safe focused checks when permitted, model duplicate/retry/concurrency/interruption/partial-commit paths, and clearly separate executed tests from proposed tests.
+5. Claude Code can leverage specialist subagents configured in `.claude/agents/` (or run sequential passes if subagents are disabled). Disclose execution context.
+6. Keep preflight read-only. Do not change production code, migrations, config, tests, or deployment files.
+7. Save reports under `docs/engineering/pre-spec/` for proposed changes or `docs/engineering/faultline/` for general existing-code audits.
+8. After a specification or proposal is drafted, run `faultline-spec-audit` before implementation to verify risk traceability.
+9. Do not claim exhaustive coverage. Record inspected scope, evidence, uninspected areas, commands actually run, uncertainty, agent provenance, and blind spots.
+
+Faultline is an analysis workflow, not a permission boundary. Host permissions and CI are required for hard enforcement.
+<!-- faultline:end -->

@@ -11,7 +11,7 @@ compatibility: Requires an Agent Skills-compatible coding agent with repository
   search/read tools. Test execution depends on host permissions and project tooling.
 metadata:
   project: faultline
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # Faultline Break Sweep

@@ -1,6 +1,6 @@
 # Faultline
 
-[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.4.1-blue.svg)](VERSION)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](install.py)
 [![Standard](https://img.shields.io/badge/standard-Agent%20Skills-purple.svg)](skills/)
@@ -27,14 +27,14 @@ Faultline enforces a **pre-implementation falsification gate**:
 
 ## Multi-Host Support Matrix
 
-Faultline 0.4.0 is host-agnostic, providing native adapters compiled from a single source of truth (`definitions/specialists.json`):
+Faultline is host-agnostic and strictly DRY. Specialist definitions are authored **once** in `definitions/specialists.json` and compiled **dynamically at runtime** into target environments by `install.py`:
 
-| Host Environment | Skills Location | Subagent Adapters | Instruction & Gate Integration | Auto-Detection Trigger |
+| Host Environment | Skills Location | Dynamic Subagent Adapters | Instruction & Gate Integration | Auto-Detection Trigger |
 | :--- | :--- | :--- | :--- | :--- |
-| **Google Antigravity** | `.agents/skills/` (symlink) | `.agents/agents/` | `AGENTS.md` (marked block) | Default |
-| **OpenCode** | `.agents/skills/` (symlink) | `.opencode/agents/` | `AGENTS.md` | Default |
-| **Claude Code** | `.claude/skills/` | `.claude/agents/` | `CLAUDE.md` (marked block) | `.claude/` or `CLAUDE.md` |
-| **Amazon Kiro** | `.kiro/skills/` | `.kiro/agents/` | `.kiro/hooks/faultline-gate.json` | `.kiro/` |
+| **Google Antigravity** | `.agents/skills/` (symlink) | `.agents/agents/` (rendered) | `AGENTS.md` (marked block) | Default |
+| **OpenCode** | `.agents/skills/` (symlink) | `.opencode/agents/` (rendered) | `AGENTS.md` | Default |
+| **Claude Code** | `.claude/skills/` | `.claude/agents/` (rendered) | `CLAUDE.md` (marked block) | `.claude/` or `CLAUDE.md` |
+| **Amazon Kiro** | `.kiro/skills/` | `.kiro/agents/` (rendered) | `.kiro/hooks/faultline-gate.json` | `.kiro/` |
 | **Cursor** | `skills/` or `.agents/skills/` | N/A (Rules-based) | `.cursor/rules/faultline.mdc` | `.cursor/` or `.cursorrules` |
 | **GitHub Copilot** | `skills/` or `.agents/skills/` | N/A (Instruction-based) | `.github/copilot-instructions.md` | `.github/` |
 | **Zed / Codex / Other** | `skills/` or `.agents/skills/` | Sequential passes | `AGENTS.md` | Default |
@@ -235,7 +235,7 @@ python3 scripts/validate_report.py docs/engineering/pre-spec/feature-x.md
 ## Repository Structure
 
 ```
-skills/                         # Canonical root skills (Agent Skills standard)
+skills/                         # Canonical root skills (Agent Skills open standard)
   faultline-preflight/          # Main preflight skill
     SKILL.md
     references/                 # Methods, taxonomy, schema, delegation protocol
@@ -247,37 +247,22 @@ skills/                         # Canonical root skills (Agent Skills standard)
     references/                 # Audit checklist and verification rules
 definitions/
   specialists.json              # Single Source of Truth for specialist roles
+templates/                      # Clean reusable integration templates & rules
+  cursor/faultline.mdc          # Cursor rule template
+  kiro/faultline-gate.json      # Kiro event hook template
+  snippets/AGENTS.md.snippet    # Injected into project AGENTS.md
+  snippets/CLAUDE.md.snippet    # Injected into project CLAUDE.md
+  snippets/copilot-instructions.md.snippet # Injected into project copilot-instructions.md
 .agents/
-  skills -> ../skills           # Relative symlink for backward compatibility
-  agents/                       # Google Antigravity subagent adapters
-.opencode/
-  agents/                       # OpenCode v2 agent adapters (with granular permissions)
-.claude/
-  agents/                       # Claude Code subagent adapters
-.kiro/
-  agents/                       # Amazon Kiro subagent adapters
-  hooks/                        # Kiro event hook definitions
-.cursor/
-  rules/                        # Cursor rule definitions (.mdc)
-integrations/
-  AGENTS.md.snippet             # Injected into project AGENTS.md
-  CLAUDE.md.snippet             # Injected into project CLAUDE.md
-  copilot-instructions.md.snippet # Injected into project copilot-instructions.md
-docs/
-  methodology.md                # Failure analysis methodology & philosophy
-  compatibility.md              # Detailed multi-host compatibility guide
-  roadmap.md                    # Roadmap & future milestones
-examples/
-  sample-preflight-report.md    # Fully annotated sample preflight report
-  sample-risk-record.md         # Example risk record structure
-scripts/
-  build_adapters.py             # Compiler from specialists.json to all host adapters
-  validate_report.py            # Structural validator for preflight reports
-  validate_skills.py            # Structural validator for skills, definitions & adapters
-tests/                          # Comprehensive unittest test suite
-install.py                      # Pure Python 3 cross-platform installer
-install.sh                      # POSIX shell wrapper
+  skills -> ../skills           # Relative symlink for local Antigravity compatibility
+install.py                      # Pure Python 3 dynamic runtime compiler & installer
+install.sh                      # POSIX wrapper
 install.ps1                     # PowerShell wrapper
+scripts/
+  build_adapters.py             # Dynamic adapter compiler & schema validator
+  validate_skills.py            # Structural validator for skills, templates & compilation
+  validate_report.py            # Structural validator for preflight reports
+tests/                          # Unittest test suite (22 tests passing)
 ```
 
 ---

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1 — Strict DRY & Dynamic Runtime Compilation
+
+- Enforced strict DRY (Don't Repeat Yourself) architecture: deleted 24 committed static markdown adapter files across `.claude/`, `.kiro/`, `.opencode/`, and `.agents/` from git.
+- Made `definitions/specialists.json` the sole authoritative source for specialist roles, tools, prompts, and sandboxing policies.
+- Implemented in-memory dynamic runtime adapter compilation in `install.py` and `scripts/build_adapters.py`, rendering host-specific adapters directly into target projects on the fly during installation.
+- Reorganized integration templates, rules, and snippets cleanly into `templates/` (`templates/cursor/`, `templates/kiro/`, `templates/snippets/`).
+- Updated `subagent-protocol.md` to reference the canonical JSON single source of truth, eliminating prose duplication.
+- Updated validation scripts and test suite (22 unit tests passing) to enforce the DRY repository structure and dynamic compiler invariants.
+
 ## 0.4.0 — Canonical skills, multi-host compiler, and universal cross-OS installer
 
 - Moved portable skills to canonical root `skills/` directory (`skills/faultline-preflight/`, `skills/faultline-break-sweep/`, `skills/faultline-spec-audit/`) conforming to Agent Skills standard, with `.agents/skills` maintained as a backward-compatible symlink.

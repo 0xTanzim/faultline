@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Cross-platform installer for Faultline portable skills, native agent adapters, and integration gates."""
+"""Cross-platform installer for Faultline portable skills, native agent adapters, and integration gates.
+
+Dynamically renders host adapters directly from definitions/specialists.json at install time.
+"""
 from __future__ import annotations
 
 import argparse
@@ -9,6 +12,18 @@ import re
 import shutil
 import sys
 
+# Ensure repo root is in python path to import build_adapters
+REPO_ROOT = Path(__file__).resolve().parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.build_adapters import (
+    load_definitions,
+    validate_definitions,
+    build_host_adapters,
+    RENDERERS,
+)
+
 START_MARKER = "<!-- faultline:start -->"
 END_MARKER = "<!-- faultline:end -->"
 RE_START_MARKER = re.compile(r"<!--\s*faultline:start\s*-->")
@@ -16,20 +31,19 @@ RE_END_MARKER = re.compile(r"<!--\s*faultline:end\s*-->")
 
 
 def get_repo_root() -> Path:
-    return Path(__file__).resolve().parent
+    return REPO_ROOT
 
 
 def get_version(repo_root: Path) -> str:
     version_file = repo_root / "VERSION"
     if version_file.is_file():
         return version_file.read_text(encoding="utf-8").strip()
-    return "0.4.0"
+    return "0.4.1"
 
 
 def find_skills(repo_root: Path) -> list[str]:
     skills_dir = repo_root / "skills"
     if not skills_dir.is_dir():
-        # Fallback to .agents/skills if canonical skills directory not found
         skills_dir = repo_root / ".agents" / "skills"
     if not skills_dir.exists():
         return []
@@ -103,10 +117,7 @@ def replace_delimited_block(text: str, snippet_content: str) -> str:
 
 
 def update_delimited_file(file_path: Path, snippet_path: Path, force: bool, dry_run: bool) -> tuple[bool, str]:
-    """Check and update a delimited marker file (e.g. AGENTS.md, CLAUDE.md).
-
-    Returns (changed, message).
-    """
+    """Check and update a delimited marker file (e.g. AGENTS.md, CLAUDE.md)."""
     err = check_delimited_collision(file_path, force=force)
     if err:
         return False, err
@@ -160,84 +171,95 @@ def install(
         return 2
 
     if is_global:
-        target = Path.home().resolve()
+        home = Path.home()
+        target = home
+        scope_name = f"user global directory: {home}"
     else:
         target = Path(target_arg).resolve()
-        if not dry_run:
-            target.mkdir(parents=True, exist_ok=True)
+        scope_name = f"project directory: {target}"
 
-    skills_source = repo_root / "skills"
-    if not skills_source.is_dir():
-        skills_source = repo_root / ".agents" / "skills"
     skills = find_skills(repo_root)
+    if not skills:
+        print(f"ERROR: No skills found in {repo_root / 'skills'}", file=sys.stderr)
+        return 1
 
-    # Determine which integrations to install
+    try:
+        specs = load_definitions(repo_root / "definitions" / "specialists.json")
+    except Exception as e:
+        print(f"ERROR: Cannot load specialist definitions: {e}", file=sys.stderr)
+        return 1
+
+    valid, msg = validate_definitions(specs)
+    if not valid:
+        print(f"ERROR: Specialist definitions invalid: {msg}", file=sys.stderr)
+        return 1
+
+    # Auto-detection triggers
+    has_claude_marker = (target / ".claude").is_dir() or (target / "CLAUDE.md").is_file()
+    has_kiro_marker = (target / ".kiro").is_dir()
+    has_cursor_marker = (target / ".cursor").is_dir() or (target / ".cursorrules").is_file()
+    has_copilot_marker = (target / ".github").is_dir()
+
     enable_antigravity = not no_antigravity
     enable_antigravity_agents = enable_antigravity and not no_antigravity_agents
     enable_opencode = not no_opencode
+    enable_claude = (install_all or has_claude_marker or is_global) and not no_claude
+    enable_kiro = (install_all or has_kiro_marker or is_global) and not no_kiro
+    enable_cursor = (install_all or has_cursor_marker) and not no_cursor and not is_global
+    enable_copilot = (install_all or has_copilot_marker) and not no_copilot and not is_global
 
-    if is_global:
-        enable_claude = not no_claude
-        enable_kiro = not no_kiro
-        enable_cursor = False
-        enable_copilot = False
-    else:
-        enable_claude = not no_claude and (install_all or (target / ".claude").is_dir() or (target / "CLAUDE.md").is_file())
-        enable_kiro = not no_kiro and (install_all or (target / ".kiro").is_dir())
-        enable_cursor = not no_cursor and (install_all or (target / ".cursor").is_dir() or (target / ".cursorrules").is_file())
-        enable_copilot = not no_copilot and (install_all or (target / ".github").is_dir())
+    # Templates location
+    templates_root = repo_root / "templates"
+    ag_snippet = templates_root / "snippets" / "AGENTS.md.snippet"
+    claude_snippet = templates_root / "snippets" / "CLAUDE.md.snippet"
+    copilot_snippet = templates_root / "snippets" / "copilot-instructions.md.snippet"
+    cursor_rule_template = templates_root / "cursor" / "faultline.mdc"
+    kiro_hook_template = templates_root / "kiro" / "faultline-gate.json"
 
-    # Pre-flight Collision Checks
+    # Collision pre-flight checks
     collision_errors: list[str] = []
 
-    def check_file_collision(p: Path) -> None:
-        if (p.exists() or p.is_symlink()) and not force:
-            collision_errors.append(f"ERROR: {p} already exists. Use --force to replace Faultline-owned content.")
+    def check_file_collision(dest: Path) -> None:
+        if (dest.exists() or dest.is_symlink()) and not force:
+            collision_errors.append(f"ERROR: Destination already exists: {dest}. Use --force to replace it.")
 
-    def check_dir_collision(p: Path) -> None:
-        if (p.exists() or p.is_symlink()) and not force:
-            collision_errors.append(f"ERROR: {p} already exists. Use --force to replace Faultline-owned content.")
+    def check_dir_collision(dest: Path) -> None:
+        if (dest.exists() or dest.is_symlink()) and not force:
+            collision_errors.append(f"ERROR: Destination directory already exists: {dest}. Use --force to replace it.")
 
-    # 1. Antigravity / Universal Skills & Agents
+    # 1. Antigravity Skills & Dynamic Agents
     ag_skills_dst = target / ".agents" / "skills"
     ag_agents_dst = target / ".agents" / "agents"
     agents_md = target / "AGENTS.md"
-    ag_snippet = repo_root / "integrations" / "AGENTS.md.snippet"
 
     if enable_antigravity:
         for s in skills:
             check_dir_collision(ag_skills_dst / s)
         if enable_antigravity_agents:
-            ag_agents_src = repo_root / ".agents" / "agents"
-            if ag_agents_src.is_dir():
-                for f in ag_agents_src.glob("faultline-*.md"):
-                    check_file_collision(ag_agents_dst / f.name)
+            for spec in specs:
+                check_file_collision(ag_agents_dst / f"{spec['name']}.md")
         if not is_global and ag_snippet.is_file():
             err = check_delimited_collision(agents_md, force=force)
             if err:
                 collision_errors.append(err)
 
-    # 2. OpenCode Agents
+    # 2. OpenCode Dynamic Agents
     oc_agents_dst = target / ".opencode" / "agents"
     if enable_opencode:
-        oc_agents_src = repo_root / ".opencode" / "agents"
-        if oc_agents_src.is_dir():
-            for f in oc_agents_src.glob("faultline-*.md"):
-                check_file_collision(oc_agents_dst / f.name)
+        for spec in specs:
+            check_file_collision(oc_agents_dst / f"{spec['name']}.md")
+        check_file_collision(oc_agents_dst / "faultline-orchestrator.md")
 
     # 3. Claude Code
     claude_skills_dst = target / ".claude" / "skills"
     claude_agents_dst = target / ".claude" / "agents"
     claude_md = target / "CLAUDE.md"
-    claude_snippet = repo_root / "integrations" / "CLAUDE.md.snippet"
 
     if enable_claude:
         for s in skills:
             check_dir_collision(claude_skills_dst / s)
-        claude_agents_src = repo_root / ".claude" / "agents"
-        if claude_agents_src.is_dir():
-            for f in claude_agents_src.glob("faultline-*.md"):
-                check_file_collision(claude_agents_dst / f.name)
+        for spec in specs:
+            check_file_collision(claude_agents_dst / f"{spec['name']}.md")
         if not is_global and claude_snippet.is_file():
             err = check_delimited_collision(claude_md, force=force)
             if err:
@@ -247,27 +269,22 @@ def install(
     kiro_skills_dst = target / ".kiro" / "skills"
     kiro_agents_dst = target / ".kiro" / "agents"
     kiro_hook_dst = target / ".kiro" / "hooks" / "faultline-gate.json"
-    kiro_hook_src = repo_root / ".kiro" / "hooks" / "faultline-gate.json"
 
     if enable_kiro:
         for s in skills:
             check_dir_collision(kiro_skills_dst / s)
-        kiro_agents_src = repo_root / ".kiro" / "agents"
-        if kiro_agents_src.is_dir():
-            for f in kiro_agents_src.glob("faultline-*.md"):
-                check_file_collision(kiro_agents_dst / f.name)
-        if not is_global and kiro_hook_src.is_file():
+        for spec in specs:
+            check_file_collision(kiro_agents_dst / f"{spec['name']}.md")
+        if not is_global and kiro_hook_template.is_file():
             check_file_collision(kiro_hook_dst)
 
     # 5. Cursor
     cursor_rule_dst = target / ".cursor" / "rules" / "faultline.mdc"
-    cursor_rule_src = repo_root / ".cursor" / "rules" / "faultline.mdc"
-    if enable_cursor and cursor_rule_src.is_file():
+    if enable_cursor and cursor_rule_template.is_file():
         check_file_collision(cursor_rule_dst)
 
     # 6. Copilot
     copilot_instructions_dst = target / ".github" / "copilot-instructions.md"
-    copilot_snippet = repo_root / "integrations" / "copilot-instructions.md.snippet"
     if enable_copilot and copilot_snippet.is_file():
         err = check_delimited_collision(copilot_instructions_dst, force=force)
         if err:
@@ -280,140 +297,136 @@ def install(
 
     # Dry-Run Reporting
     if dry_run:
-        ag_agent_files = [f.name for f in sorted((repo_root / ".agents" / "agents").glob("faultline-*.md"))] if enable_antigravity_agents else []
-        oc_agent_files = [f.name for f in sorted((repo_root / ".opencode" / "agents").glob("faultline-*.md"))] if enable_opencode else []
-
+        spec_names = [f"{s['name']}.md" for s in specs]
         print(f"Would install skills: {' '.join(skills)}")
-        print(f"Would install Antigravity agents: {' '.join(ag_agent_files) if ag_agent_files else '(none)'}")
-        print(f"Would install OpenCode agents: {' '.join(oc_agent_files) if oc_agent_files else '(none)'}")
+        print(f"Would dynamically render Antigravity agents: {' '.join(spec_names) if enable_antigravity_agents else '(none)'}")
+        print(f"Would dynamically render OpenCode agents: {' '.join(spec_names + ['faultline-orchestrator.md']) if enable_opencode else '(none)'}")
         if not is_global and enable_antigravity:
             print(f"Would append/refresh only the marked Faultline block in: {agents_md}")
         if enable_claude:
-            print(f"Would install Claude Code adapters into: {target / '.claude'}")
+            print(f"Would dynamically render Claude Code adapters into: {target / '.claude'}")
             if not is_global:
                 print(f"Would append/refresh only the marked Faultline block in: {claude_md}")
         if enable_kiro:
             if is_global:
-                print(f"Would install Kiro adapters into: {target / '.kiro'}")
+                print(f"Would dynamically render Kiro adapters into: {target / '.kiro'}")
             else:
-                print(f"Would install Kiro adapters and hooks into: {target / '.kiro'}")
+                print(f"Would dynamically render Kiro adapters and hooks into: {target / '.kiro'}")
         if enable_cursor:
-            print(f"Would install Cursor rule: {cursor_rule_dst}")
+            print(f"Would install Cursor rule into: {cursor_rule_dst}")
         if enable_copilot:
             print(f"Would append/refresh only the marked Faultline block in: {copilot_instructions_dst}")
         return 0
 
-    # Execution Phase
-    # 1. Antigravity skills & agents
-    if enable_antigravity:
-        ag_skills_dst.mkdir(parents=True, exist_ok=True)
-        for s in skills:
-            dst = ag_skills_dst / s
+    # Execute Installation
+    installed_actions: list[str] = []
+    source_skills_dir = repo_root / "skills"
+    if not source_skills_dir.is_dir():
+        source_skills_dir = repo_root / ".agents" / "skills"
+
+    def install_skill_dir(src: Path, dst: Path) -> None:
+        if dst.exists() or dst.is_symlink():
             safe_rmpath(dst)
-            shutil.copytree(skills_source / s, dst)
-            print(f"Installed skill: {s}")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, dst)
+
+    # 1. Antigravity Skills & Dynamic Agents
+    if enable_antigravity:
+        for s in skills:
+            src = source_skills_dir / s
+            dst = ag_skills_dst / s
+            install_skill_dir(src, dst)
+            installed_actions.append(f"Installed {s} -> {dst}")
 
         if enable_antigravity_agents:
-            ag_agents_dst.mkdir(parents=True, exist_ok=True)
-            ag_agents_src = repo_root / ".agents" / "agents"
-            for f in sorted(ag_agents_src.glob("faultline-*.md")):
-                safe_rmpath(ag_agents_dst / f.name)
-                shutil.copy2(f, ag_agents_dst / f.name)
+            build_host_adapters("antigravity", ag_agents_dst, specs, dry_run=False)
+            installed_actions.append(f"Dynamically generated Antigravity adapters ({len(specs)} roles) -> {ag_agents_dst}")
 
         if not is_global and ag_snippet.is_file():
-            ok, msg = update_delimited_file(agents_md, ag_snippet, force=force, dry_run=False)
-            if not ok:
-                print(msg, file=sys.stderr)
-                return 1
-            print(msg)
+            changed, msg = update_delimited_file(agents_md, ag_snippet, force=force, dry_run=False)
+            if changed:
+                installed_actions.append(msg)
 
-    # 2. OpenCode agents
+    # 2. OpenCode Dynamic Agents
     if enable_opencode:
-        oc_agents_dst.mkdir(parents=True, exist_ok=True)
-        oc_agents_src = repo_root / ".opencode" / "agents"
-        for f in sorted(oc_agents_src.glob("faultline-*.md")):
-            safe_rmpath(oc_agents_dst / f.name)
-            shutil.copy2(f, oc_agents_dst / f.name)
+        build_host_adapters("opencode", oc_agents_dst, specs, dry_run=False)
+        installed_actions.append(f"Dynamically generated OpenCode adapters ({len(specs) + 1} agents) -> {oc_agents_dst}")
 
     # 3. Claude Code
     if enable_claude:
-        claude_skills_dst.mkdir(parents=True, exist_ok=True)
         for s in skills:
+            src = source_skills_dir / s
             dst = claude_skills_dst / s
-            safe_rmpath(dst)
-            shutil.copytree(skills_source / s, dst)
-        claude_agents_dst.mkdir(parents=True, exist_ok=True)
-        claude_agents_src = repo_root / ".claude" / "agents"
-        for f in sorted(claude_agents_src.glob("faultline-*.md")):
-            safe_rmpath(claude_agents_dst / f.name)
-            shutil.copy2(f, claude_agents_dst / f.name)
+            install_skill_dir(src, dst)
+            installed_actions.append(f"Installed {s} -> {dst}")
+
+        build_host_adapters("claude", claude_agents_dst, specs, dry_run=False)
+        installed_actions.append(f"Dynamically generated Claude Code adapters ({len(specs)} roles) -> {claude_agents_dst}")
+
         if not is_global and claude_snippet.is_file():
-            ok, msg = update_delimited_file(claude_md, claude_snippet, force=force, dry_run=False)
-            if not ok:
-                print(msg, file=sys.stderr)
-                return 1
-            print(msg)
+            changed, msg = update_delimited_file(claude_md, claude_snippet, force=force, dry_run=False)
+            if changed:
+                installed_actions.append(msg)
 
     # 4. Amazon Kiro
     if enable_kiro:
-        kiro_skills_dst.mkdir(parents=True, exist_ok=True)
         for s in skills:
+            src = source_skills_dir / s
             dst = kiro_skills_dst / s
-            safe_rmpath(dst)
-            shutil.copytree(skills_source / s, dst)
-        kiro_agents_dst.mkdir(parents=True, exist_ok=True)
-        kiro_agents_src = repo_root / ".kiro" / "agents"
-        for f in sorted(kiro_agents_src.glob("faultline-*.md")):
-            safe_rmpath(kiro_agents_dst / f.name)
-            shutil.copy2(f, kiro_agents_dst / f.name)
-        if not is_global and kiro_hook_src.is_file():
+            install_skill_dir(src, dst)
+            installed_actions.append(f"Installed {s} -> {dst}")
+
+        build_host_adapters("kiro", kiro_agents_dst, specs, dry_run=False)
+        installed_actions.append(f"Dynamically generated Kiro adapters ({len(specs)} roles) -> {kiro_agents_dst}")
+
+        if not is_global and kiro_hook_template.is_file():
+            if kiro_hook_dst.exists() or kiro_hook_dst.is_symlink():
+                safe_rmpath(kiro_hook_dst)
             kiro_hook_dst.parent.mkdir(parents=True, exist_ok=True)
-            safe_rmpath(kiro_hook_dst)
-            shutil.copy2(kiro_hook_src, kiro_hook_dst)
-            print(f"Installed Kiro hook: {kiro_hook_dst}")
+            shutil.copy2(kiro_hook_template, kiro_hook_dst)
+            installed_actions.append(f"Installed Kiro gate hook -> {kiro_hook_dst}")
 
     # 5. Cursor
-    if enable_cursor and cursor_rule_src.is_file():
+    if enable_cursor and cursor_rule_template.is_file():
+        if cursor_rule_dst.exists() or cursor_rule_dst.is_symlink():
+            safe_rmpath(cursor_rule_dst)
         cursor_rule_dst.parent.mkdir(parents=True, exist_ok=True)
-        safe_rmpath(cursor_rule_dst)
-        shutil.copy2(cursor_rule_src, cursor_rule_dst)
-        print(f"Installed Cursor rule: {cursor_rule_dst}")
+        shutil.copy2(cursor_rule_template, cursor_rule_dst)
+        installed_actions.append(f"Installed Cursor preflight rule -> {cursor_rule_dst}")
 
     # 6. Copilot
     if enable_copilot and copilot_snippet.is_file():
-        ok, msg = update_delimited_file(copilot_instructions_dst, copilot_snippet, force=force, dry_run=False)
-        if not ok:
-            print(msg, file=sys.stderr)
-            return 1
-        print(msg)
+        changed, msg = update_delimited_file(copilot_instructions_dst, copilot_snippet, force=force, dry_run=False)
+        if changed:
+            installed_actions.append(msg)
 
-    print(f"Faultline {version} installed into {target}")
-    print("Reload the agent. Use faultline-preflight or faultline-break-sweep; review changes before committing.")
+    print(f"Faultline {version} installed successfully to {scope_name}")
+    for act in installed_actions:
+        print(f"  + {act}")
+
     return 0
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Install/update portable Faultline skills, native agent adapters, and integration gates.",
-        add_help=True,
+        description="Cross-platform installer for Faultline skills, dynamic host adapters, and integration gates."
     )
     parser.add_argument("target", nargs="?", default=None, help="Target project directory")
-    parser.add_argument("--global", dest="is_global", action="store_true", help="Install into global user directory (~/.agents/skills/, etc.)")
-    parser.add_argument("--dry-run", action="store_true", help="Preview intended changes only.")
-    parser.add_argument("--force", action="store_true", help="Replace existing Faultline-owned skills/agent files and refresh marked blocks.")
-    parser.add_argument("--all", dest="install_all", action="store_true", help="Install all environment adapters regardless of auto-detection.")
-    parser.add_argument("--no-antigravity", action="store_true", help="Skip .agents/ skills and adapters.")
-    parser.add_argument("--no-antigravity-agents", action="store_true", help="Skip .agents/agents/ adapters.")
-    parser.add_argument("--no-opencode", action="store_true", help="Skip .opencode/agents/ adapters.")
-    parser.add_argument("--no-opencode-agents", dest="no_opencode", action="store_true", help="Alias for --no-opencode.")
-    parser.add_argument("--no-claude", action="store_true", help="Skip Claude Code skills and adapters.")
-    parser.add_argument("--no-kiro", action="store_true", help="Skip Kiro skills and adapters.")
-    parser.add_argument("--no-cursor", action="store_true", help="Skip Cursor rules.")
-    parser.add_argument("--no-copilot", action="store_true", help="Skip GitHub Copilot instructions.")
+    parser.add_argument("--global", dest="is_global", action="store_true", help="Install to user home directory")
+    parser.add_argument("--dry-run", action="store_true", help="Preview planned actions without modifying files")
+    parser.add_argument("--force", action="store_true", help="Replace existing files and refresh marked instruction blocks")
+    parser.add_argument("--all", dest="install_all", action="store_true", help="Install adapters for all supported environments")
+    parser.add_argument("--no-antigravity", action="store_true", help="Skip Google Antigravity skills, adapters, and AGENTS.md")
+    parser.add_argument("--no-antigravity-agents", action="store_true", help="Skip Antigravity .agents/agents/ adapters only")
+    parser.add_argument("--no-opencode", action="store_true", help="Skip OpenCode .opencode/agents/ adapters")
+    parser.add_argument("--no-claude", action="store_true", help="Skip Claude Code skills, adapters, and CLAUDE.md")
+    parser.add_argument("--no-kiro", action="store_true", help="Skip Amazon Kiro skills, adapters, and hooks")
+    parser.add_argument("--no-cursor", action="store_true", help="Skip Cursor .cursor/rules/faultline.mdc")
+    parser.add_argument("--no-copilot", action="store_true", help="Skip GitHub Copilot instructions")
 
     args = parser.parse_args()
 
-    exit_code = install(
+    return install(
         target_arg=args.target,
         is_global=args.is_global,
         dry_run=args.dry_run,
@@ -427,8 +440,7 @@ def main() -> None:
         no_cursor=args.no_cursor,
         no_copilot=args.no_copilot,
     )
-    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -4,9 +4,23 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.build_adapters import (
+    load_definitions,
+    validate_definitions,
+    build_host_adapters,
+    render_claude,
+    render_kiro,
+    render_opencode,
+    render_opencode_orchestrator,
+    RENDERERS,
+)
 
 
 class SkillTests(unittest.TestCase):
@@ -18,40 +32,55 @@ class SkillTests(unittest.TestCase):
         r = subprocess.run([sys.executable, str(ROOT / "scripts" / "build_adapters.py"), "--check"], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
-    def test_all_host_adapters_reference_only_current_roles(self):
-        with open(ROOT / "definitions" / "specialists.json", "r", encoding="utf-8") as f:
-            specs = json.load(f)
+    def test_no_duplicate_host_folders_in_repo_root(self):
+        """Strict DRY invariant: no static generated host adapter directories in git repository root."""
+        self.assertFalse((ROOT / ".claude").exists(), ".claude should not exist in repo root")
+        self.assertFalse((ROOT / ".kiro").exists(), ".kiro should not exist in repo root")
+        self.assertFalse((ROOT / ".opencode").exists(), ".opencode should not exist in repo root")
+        self.assertFalse((ROOT / ".cursor").exists(), ".cursor should not exist in repo root")
+
+    def test_dynamic_adapter_generation_for_all_hosts(self):
+        specs = load_definitions(ROOT / "definitions" / "specialists.json")
         expected_roles = {spec["name"] for spec in specs}
         self.assertEqual(len(expected_roles), 6)
 
-        ag_roles = {p.stem for p in (ROOT / ".agents" / "agents").glob("*.md")}
-        oc_roles = {p.stem for p in (ROOT / ".opencode" / "agents").glob("*.md")}
-        claude_roles = {p.stem for p in (ROOT / ".claude" / "agents").glob("*.md")}
-        kiro_roles = {p.stem for p in (ROOT / ".kiro" / "agents").glob("*.md")}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            for host in ["antigravity", "opencode", "claude", "kiro"]:
+                host_dir = tmppath / host
+                files = build_host_adapters(host, host_dir, specs)
+                file_stems = {f.stem for f in files}
 
-        self.assertEqual(ag_roles, expected_roles)
-        self.assertEqual(oc_roles - {"faultline-orchestrator"}, expected_roles)
-        self.assertEqual(claude_roles, expected_roles)
-        self.assertEqual(kiro_roles, expected_roles)
-
-        orch = (ROOT / ".opencode" / "agents" / "faultline-orchestrator.md").read_text(encoding="utf-8")
-        for role in expected_roles:
-            self.assertIn(f"resource: {role}", orch)
+                if host == "opencode":
+                    self.assertEqual(file_stems - {"faultline-orchestrator"}, expected_roles)
+                    orch = (host_dir / "faultline-orchestrator.md").read_text(encoding="utf-8")
+                    for role in expected_roles:
+                        self.assertIn(f"resource: {role}", orch)
+                else:
+                    self.assertEqual(file_stems, expected_roles)
 
     def test_adapters_reference_canonical_and_host_protocol_paths(self):
-        claude_agent = (ROOT / ".claude" / "agents" / "faultline-runtime-breaker.md").read_text(encoding="utf-8")
+        specs = load_definitions(ROOT / "definitions" / "specialists.json")
+        runtime_spec = next(s for s in specs if s["id"] == "runtime-breaker")
+
+        claude_agent = render_claude(runtime_spec)
         self.assertIn("skills/faultline-preflight/references/subagent-protocol.md", claude_agent)
         self.assertIn(".claude/skills/faultline-preflight/references/subagent-protocol.md", claude_agent)
 
-        kiro_agent = (ROOT / ".kiro" / "agents" / "faultline-runtime-breaker.md").read_text(encoding="utf-8")
+        kiro_agent = render_kiro(runtime_spec)
         self.assertIn("skills/faultline-preflight/references/subagent-protocol.md", kiro_agent)
         self.assertIn(".kiro/skills/faultline-preflight/references/subagent-protocol.md", kiro_agent)
 
     def test_opencode_uses_v2_permissions_not_v1_permission(self):
-        for p in (ROOT / ".opencode" / "agents").glob("*.md"):
-            txt = p.read_text(encoding="utf-8")
-            self.assertIn("permissions:", txt, p)
+        specs = load_definitions(ROOT / "definitions" / "specialists.json")
+        for s in specs:
+            txt = render_opencode(s)
+            self.assertIn("permissions:", txt)
             self.assertNotRegex(txt, r"(?m)^permission:")
+
+        orch_txt = render_opencode_orchestrator()
+        self.assertIn("permissions:", orch_txt)
+        self.assertNotRegex(orch_txt, r"(?m)^permission:")
 
     def test_canonical_skills_and_symlink(self):
         skills_dir = ROOT / "skills"

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0-beta.1 — Streamed 1-line installer, report scaffolder, uninstaller, and SARIF export
+
+- Added streamed remote 1-liner installation via `curl | bash` (POSIX) and `irm | iex` (PowerShell) fetching GitHub release archives dynamically without requiring manual git clone.
+- Added clean rollback and uninstallation (`install.py --uninstall`) safely stripping marked instruction blocks while preserving user rules.
+- Added report scaffolder (`scripts/scaffold_report.py` / `npm run new:report`) generating 100% structurally valid skeleton reports ready for analysis.
+- Made `scripts/validate_report.py` case-insensitive and whitespace-tolerant on required section titles and flexible on risk heading syntax.
+- Added enterprise CI/CD report exporter (`scripts/export_report.py` / `npm run export:report`) supporting standard SARIF v2.1.0 for GitHub Code Scanning and structured JSON.
+- Expanded automated test suite to 26 unit tests covering uninstallation, scaffolding, SARIF export, and validator robustness.
+
 ## 0.4.1 — Strict DRY & Dynamic Runtime Compilation
 
 - Enforced strict DRY (Don't Repeat Yourself) architecture: deleted 24 committed static markdown adapter files across `.claude/`, `.kiro/`, `.opencode/`, and `.agents/` from git.

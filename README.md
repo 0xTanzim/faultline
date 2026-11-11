@@ -1,6 +1,6 @@
 # Faultline
 
-[![Version](https://img.shields.io/badge/version-0.4.1-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.5.0--beta.1-blue.svg)](VERSION)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](install.py)
 [![Standard](https://img.shields.io/badge/standard-Agent%20Skills-purple.svg)](skills/)
@@ -81,11 +81,21 @@ Located inside `skills/faultline-preflight/references/`:
 
 ## Installation
 
-Faultline features a universal, zero-dependency installer (`install.py`) written in pure Python 3 standard library, with shell wrappers for POSIX (`install.sh`) and Windows PowerShell (`install.ps1`).
+Faultline features a universal, zero-dependency installer (`install.py`) written in pure Python 3 standard library, with shell wrappers supporting local execution and modern streamed one-liner installation.
 
-### Quick Start (Project Scope)
+### 1-Line Remote Install (No Clone Required)
 
-Install into your current project with smart environment auto-detection:
+Install directly from GitHub into any target project:
+
+```bash
+# POSIX (Linux, macOS)
+curl -fsSL https://raw.githubusercontent.com/0xTanzim/faultline/main/install.sh | bash -s -- /path/to/project
+
+# Windows PowerShell
+irm https://raw.githubusercontent.com/0xTanzim/faultline/main/install.ps1 | iex
+```
+
+### Local Project Installation
 
 ```bash
 # Pure Python (Linux, macOS, Windows)
@@ -110,6 +120,17 @@ python3 install.py --global
 
 This installs portable skills to `~/.agents/skills/`, `~/.claude/skills/`, and `~/.kiro/skills/`.
 
+### Clean Uninstallation / Rollback
+
+To cleanly remove Faultline skills, generated adapters, and strip all marked instruction blocks without touching your custom rules:
+
+```bash
+python3 install.py --uninstall /path/to/project
+
+# Global uninstall:
+python3 install.py --uninstall --global
+```
+
 ### Advanced Options & Flags
 
 ```bash
@@ -122,13 +143,8 @@ python3 install.py --all /path/to/project
 # Force overwrite existing Faultline files and refresh marked instruction blocks:
 python3 install.py --force /path/to/project
 
-# Granular host exclusions:
-python3 install.py --no-antigravity /path/to/project
-python3 install.py --no-opencode /path/to/project
-python3 install.py --no-claude /path/to/project
-python3 install.py --no-kiro /path/to/project
-python3 install.py --no-cursor /path/to/project
-python3 install.py --no-copilot /path/to/project
+# Cleanly remove Faultline from a project or global scope:
+python3 install.py --uninstall /path/to/project
 ```
 
 ### Delimited Marker Safety
@@ -215,19 +231,40 @@ Faultline is **strictly read-only by default**:
 
 ---
 
-## Report Artifacts & Verification
+## Report Artifacts, Scaffolding & CI Export
 
 Every completed preflight generates a durable, reviewable markdown report:
 
 - **Pre-spec Reports:** `docs/engineering/pre-spec/<change-slug>.md`
 - **Brownfield Audits:** `docs/engineering/faultline/<scope-slug>.md`
 
-### Validating Reports
+### 1. Scaffolding a Valid Report Skeleton
+
+Generate an immediately-valid skeleton report pre-populated with all required sections:
+
+```bash
+npm run new:report -- payment-flow --title "Payment Gateway Audit"
+# or: python3 scripts/scaffold_report.py payment-flow --title "Payment Gateway Audit"
+```
+
+### 2. Validating Reports
 
 Validate report formatting, risk schemas, and required Given/When/Then verification scenarios:
 
 ```bash
-python3 scripts/validate_report.py docs/engineering/pre-spec/feature-x.md
+python3 scripts/validate_report.py docs/engineering/pre-spec/payment-flow.md
+```
+
+### 3. Exporting to SARIF (GitHub Code Scanning) & JSON
+
+Export validated preflight findings to standard **SARIF v2.1.0** for GitHub Security dashboard integration, or structured **JSON** for automated CI gates:
+
+```bash
+# Export to SARIF
+npm run export:report -- docs/engineering/pre-spec/payment-flow.md --format sarif -o report.sarif
+
+# Export to structured JSON
+npm run export:report -- docs/engineering/pre-spec/payment-flow.md --format json -o report.json
 ```
 
 ---

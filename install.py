@@ -2,6 +2,7 @@
 """Cross-platform installer for Faultline portable skills, native agent adapters, and integration gates.
 
 Dynamically renders host adapters directly from definitions/specialists.json at install time.
+Supports project scope, global user scope, dry-run, force refresh, and clean uninstallation.
 """
 from __future__ import annotations
 
@@ -38,7 +39,7 @@ def get_version(repo_root: Path) -> str:
     version_file = repo_root / "VERSION"
     if version_file.is_file():
         return version_file.read_text(encoding="utf-8").strip()
-    return "0.4.1"
+    return "0.5.0-beta.1"
 
 
 def find_skills(repo_root: Path) -> list[str]:
@@ -116,6 +117,24 @@ def replace_delimited_block(text: str, snippet_content: str) -> str:
     return snippet_content.strip() + "\n"
 
 
+def remove_delimited_block(text: str) -> str:
+    """Safely strip only the marked Faultline block from text, leaving all surrounding content intact."""
+    start_matches = list(RE_START_MARKER.finditer(text))
+    end_matches = list(RE_END_MARKER.finditer(text))
+
+    if len(start_matches) == 1 and len(end_matches) == 1 and start_matches[0].start() < end_matches[0].end():
+        start_m = start_matches[0]
+        end_m = end_matches[0]
+        line_start = text.rfind("\n", 0, start_m.start())
+        prefix = text[: line_start + 1 if line_start != -1 else 0].rstrip()
+        line_end = text.find("\n", end_m.end())
+        suffix = text[line_end + 1 if line_end != -1 else len(text) :].lstrip("\r\n")
+
+        parts = [p for p in [prefix, suffix] if p]
+        return "\n\n".join(parts) + ("\n" if parts else "")
+    return text
+
+
 def update_delimited_file(file_path: Path, snippet_path: Path, force: bool, dry_run: bool) -> tuple[bool, str]:
     """Check and update a delimited marker file (e.g. AGENTS.md, CLAUDE.md)."""
     err = check_delimited_collision(file_path, force=force)
@@ -135,6 +154,125 @@ def update_delimited_file(file_path: Path, snippet_path: Path, force: bool, dry_
 
     file_path.write_text(final_text, encoding="utf-8")
     return True, f"Updated {file_path}"
+
+
+def uninstall(target_arg: str | None, is_global: bool, dry_run: bool) -> int:
+    """Cleanly remove Faultline skills, generated adapters, and delimited rule blocks."""
+    repo_root = get_repo_root()
+    version = get_version(repo_root)
+
+    if is_global and target_arg:
+        print("ERROR: Cannot specify both a target directory and --global.", file=sys.stderr)
+        return 2
+
+    if not is_global and not target_arg:
+        target = Path.cwd()
+        scope_name = f"project directory: {target}"
+    elif is_global:
+        target = Path.home()
+        scope_name = f"user global directory: {target}"
+    else:
+        target = Path(target_arg).resolve()
+        scope_name = f"project directory: {target}"
+
+    skills = find_skills(repo_root)
+    try:
+        specs = load_definitions(repo_root / "definitions" / "specialists.json")
+    except Exception:
+        specs = []
+
+    actions: list[str] = []
+
+    def remove_file(f: Path) -> None:
+        if f.is_file() or f.is_symlink():
+            if dry_run:
+                actions.append(f"Would delete file: {f}")
+            else:
+                f.unlink()
+                actions.append(f"Deleted file: {f}")
+
+    def remove_dir(d: Path) -> None:
+        if d.is_dir() or d.is_symlink():
+            if dry_run:
+                actions.append(f"Would delete directory: {d}")
+            else:
+                safe_rmpath(d)
+                actions.append(f"Deleted directory: {d}")
+
+    def strip_marker_file(f: Path) -> None:
+        if not f.is_file():
+            return
+        text = f.read_text(encoding="utf-8")
+        if START_MARKER in text and END_MARKER in text:
+            cleaned = remove_delimited_block(text)
+            if dry_run:
+                actions.append(f"Would remove marked Faultline block from: {f}")
+            else:
+                if not cleaned.strip():
+                    f.unlink()
+                    actions.append(f"Deleted empty rule file after stripping markers: {f}")
+                else:
+                    f.write_text(cleaned, encoding="utf-8")
+                    actions.append(f"Stripped marked Faultline block from: {f}")
+
+    # 1. Skills removal
+    for s in skills:
+        remove_dir(target / ".agents" / "skills" / s)
+        remove_dir(target / ".claude" / "skills" / s)
+        remove_dir(target / ".kiro" / "skills" / s)
+
+    # 2. Host adapters removal
+    for spec in specs:
+        fname = f"{spec['name']}.md"
+        remove_file(target / ".agents" / "agents" / fname)
+        remove_file(target / ".claude" / "agents" / fname)
+        remove_file(target / ".kiro" / "agents" / fname)
+        remove_file(target / ".opencode" / "agents" / fname)
+    remove_file(target / ".opencode" / "agents" / "faultline-orchestrator.md")
+
+    # 3. Rules and hooks removal
+    remove_file(target / ".cursor" / "rules" / "faultline.mdc")
+    remove_file(target / ".kiro" / "hooks" / "faultline-gate.json")
+
+    # 4. Marker blocks stripping
+    strip_marker_file(target / "AGENTS.md")
+    strip_marker_file(target / "CLAUDE.md")
+    strip_marker_file(target / ".github" / "copilot-instructions.md")
+
+    # 5. Prune empty parent directories
+    def prune_empty(d: Path) -> None:
+        if d.is_dir() and not any(d.iterdir()):
+            if not dry_run:
+                try:
+                    d.rmdir()
+                    actions.append(f"Pruned empty directory: {d}")
+                except Exception:
+                    pass
+
+    prune_empty(target / ".agents" / "skills")
+    prune_empty(target / ".agents" / "agents")
+    prune_empty(target / ".agents")
+    prune_empty(target / ".claude" / "skills")
+    prune_empty(target / ".claude" / "agents")
+    prune_empty(target / ".claude")
+    prune_empty(target / ".kiro" / "skills")
+    prune_empty(target / ".kiro" / "agents")
+    prune_empty(target / ".kiro" / "hooks")
+    prune_empty(target / ".kiro")
+    prune_empty(target / ".opencode" / "agents")
+    prune_empty(target / ".opencode")
+    prune_empty(target / ".cursor" / "rules")
+    prune_empty(target / ".cursor")
+
+    status_word = "Would uninstall" if dry_run else "Uninstalled"
+    print(f"Faultline {version} {status_word} from {scope_name}")
+    if actions:
+        for act in actions:
+            print(f"  - {act}")
+    else:
+        print("  (no Faultline files or rule blocks found)")
+
+    return 0
 
 
 def install(
@@ -415,6 +553,7 @@ def main() -> int:
     parser.add_argument("--global", dest="is_global", action="store_true", help="Install to user home directory")
     parser.add_argument("--dry-run", action="store_true", help="Preview planned actions without modifying files")
     parser.add_argument("--force", action="store_true", help="Replace existing files and refresh marked instruction blocks")
+    parser.add_argument("--uninstall", action="store_true", help="Cleanly remove Faultline skills, adapters, rules, and markers")
     parser.add_argument("--all", dest="install_all", action="store_true", help="Install adapters for all supported environments")
     parser.add_argument("--no-antigravity", action="store_true", help="Skip Google Antigravity skills, adapters, and AGENTS.md")
     parser.add_argument("--no-antigravity-agents", action="store_true", help="Skip Antigravity .agents/agents/ adapters only")
@@ -425,6 +564,13 @@ def main() -> int:
     parser.add_argument("--no-copilot", action="store_true", help="Skip GitHub Copilot instructions")
 
     args = parser.parse_args()
+
+    if args.uninstall:
+        return uninstall(
+            target_arg=args.target,
+            is_global=args.is_global,
+            dry_run=args.dry_run,
+        )
 
     return install(
         target_arg=args.target,
